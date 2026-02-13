@@ -1,5 +1,7 @@
 """Slash commands — local handlers for /xxx inputs."""
 
+from collections.abc import Callable
+
 from .console import console
 
 
@@ -9,7 +11,9 @@ def handle_help() -> None:
         "  /help   — show this message\n"
         "  /model  — show current model\n"
         "  /clear  — clear conversation history\n"
-        "  /quit   — exit"
+        "  /quit   — exit\n\n"
+        "[bold]Shortcuts:[/bold]\n"
+        "  Esc Esc — interrupt current operation"
     )
 
 
@@ -25,7 +29,7 @@ def handle_model() -> None:
 
 
 # Return value: "quit" to exit, "clear" to reset history, None to continue
-COMMANDS: dict[str, callable] = {
+COMMANDS: dict[str, Callable[[], None]] = {
     "/help": handle_help,
     "/model": handle_model,
 }

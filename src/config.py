@@ -15,8 +15,8 @@ class Config:
     api_key: str
     model: str
     base_url: str | None = None
-    temperature: float = 0.7
-    max_tokens: int = 16384
+    temperature: float | None = None
+    max_tokens: int | None = None
 
     @property
     def litellm_model(self) -> str:
@@ -47,8 +47,8 @@ class Config:
             api_key=os.environ["API_KEY"],
             model=os.environ["MODEL"],
             base_url=os.getenv("BASE_URL"),
-            temperature=float(os.getenv("TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("MAX_TOKENS", "16384")),
+            temperature=float(t) if (t := os.getenv("TEMPERATURE")) else None,
+            max_tokens=int(m) if (m := os.getenv("MAX_TOKENS")) else None,
         )
 
 

@@ -8,6 +8,7 @@ dependencies = [
     "openai-agents[litellm]",
     "rich>=14.0.0",
     "python-dotenv>=1.0.0",
+    "prompt_toolkit>=3.0.0",
 ]
 
 [project.scripts]

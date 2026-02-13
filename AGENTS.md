@@ -13,7 +13,7 @@ src/
   agent.py           — Agent creation (system prompt, model, tools)
   tools/             — Tool implementations (read, write, edit, bash)
     guard.py         — Path validation / safety guards
-  tui/               — Terminal UI (Rich-based REPL loop, slash commands, console output)
+  tui/               — Terminal UI (prompt_toolkit input, Rich console output, slash commands)
 tests/               — pytest + pytest-asyncio test suite
 ```
 

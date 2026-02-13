@@ -32,8 +32,8 @@ class TestConfig:
         env_file.write_text("PROVIDER=openrouter\nAPI_KEY=sk-test\nMODEL=test/model\n")
 
         config = Config.from_env(env_file)
-        assert config.temperature == 0.7
-        assert config.max_tokens == 16384
+        assert config.temperature is None
+        assert config.max_tokens is None
         assert config.base_url is None
 
     def test_from_env_with_base_url(self, tmp_path: Path):

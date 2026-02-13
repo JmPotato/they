@@ -17,11 +17,15 @@ SENSITIVE_NAMES = [
     "*.jks",
 ]
 
-# Patterns matched against any component of the path
-SENSITIVE_PATHS = [
+# Single-component directory names matched against path parts
+SENSITIVE_DIRS = [
     ".ssh",
     ".gnupg",
     ".aws",
+]
+
+# Multi-component path fragments matched via substring of the resolved path
+SENSITIVE_FRAGMENTS = [
     ".config/gcloud",
 ]
 
@@ -39,9 +43,15 @@ def check_path(file_path: str) -> str | None:
         if fnmatch.fnmatch(name, pattern):
             return f"Skipped: {name} is a sensitive file and cannot be accessed."
 
-    parts = p.resolve().parts
-    for pattern in SENSITIVE_PATHS:
-        if pattern in parts:
-            return f"Skipped: path contains sensitive directory '{pattern}'."
+    resolved = p.resolve()
+    parts = resolved.parts
+    for dirname in SENSITIVE_DIRS:
+        if dirname in parts:
+            return f"Skipped: path contains sensitive directory '{dirname}'."
+
+    resolved_str = str(resolved)
+    for fragment in SENSITIVE_FRAGMENTS:
+        if f"/{fragment}/" in resolved_str or resolved_str.endswith(f"/{fragment}"):
+            return f"Skipped: path contains sensitive directory '{fragment}'."
 
     return None

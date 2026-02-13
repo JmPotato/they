@@ -30,6 +30,11 @@ class TestGuard:
 
         assert check_path("/home/user/.ssh/id_rsa") is not None
 
+    def test_blocks_config_gcloud(self):
+        from src.tools.guard import check_path
+
+        assert check_path("/home/user/.config/gcloud/credentials.json") is not None
+
     @pytest.mark.parametrize("name", ["readme.md", "src/config.py", ".env.example"])
     def test_allows_normal_files(self, name: str):
         from src.tools.guard import check_path

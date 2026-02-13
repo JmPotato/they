@@ -1,5 +1,12 @@
 """Main conversation loop — streamed Agent execution."""
 
+import asyncio
+import os
+import sys
+import termios
+import time
+import tty
+
 from agents import Agent, Runner
 from agents.items import ToolCallItem
 from agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
@@ -13,6 +20,53 @@ from .console import (
     print_tool_call,
     print_welcome,
 )
+from .prompt import prompt_input
+
+DOUBLE_ESC_WINDOW = 0.5  # seconds
+
+
+class _EscMonitor:
+    """Async context manager that detects double-Esc keypresses during streaming.
+
+    Sets the terminal to cbreak mode so individual keypresses arrive immediately,
+    then watches stdin via the event loop's reader.  Two Esc presses within
+    ``DOUBLE_ESC_WINDOW`` seconds set the ``interrupted`` flag.
+    """
+
+    def __init__(self):
+        self._last_esc: float = 0
+        self._triggered = False
+        self._fd = sys.stdin.fileno()
+        self._old_settings: list | None = None
+
+    # -- event-loop callback --------------------------------------------------
+
+    def _on_readable(self):
+        data = os.read(self._fd, 1024)
+        if data == b"\x1b":
+            now = time.monotonic()
+            if now - self._last_esc < DOUBLE_ESC_WINDOW:
+                self._triggered = True
+            self._last_esc = now
+
+    # -- context manager ------------------------------------------------------
+
+    async def __aenter__(self):
+        self._triggered = False
+        self._last_esc = 0
+        self._old_settings = termios.tcgetattr(self._fd)
+        tty.setcbreak(self._fd)
+        asyncio.get_running_loop().add_reader(self._fd, self._on_readable)
+        return self
+
+    async def __aexit__(self, *exc):
+        asyncio.get_running_loop().remove_reader(self._fd)
+        if self._old_settings is not None:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_settings)
+
+    @property
+    def interrupted(self) -> bool:
+        return self._triggered
 
 
 def _handle_event(event: RawResponsesStreamEvent | RunItemStreamEvent) -> None:
@@ -23,6 +77,9 @@ def _handle_event(event: RawResponsesStreamEvent | RunItemStreamEvent) -> None:
         return
 
     if not isinstance(event, RunItemStreamEvent):
+        return
+
+    if event.name != "tool_called":
         return
 
     item = event.item
@@ -43,7 +100,7 @@ async def run_loop(agent: Agent) -> None:
     while True:
         console.print()
         try:
-            user_input = console.input("[bold green]> [/bold green]")
+            user_input = await prompt_input()
         except EOFError, KeyboardInterrupt:
             console.print("\nBye!")
             break
@@ -64,12 +121,18 @@ async def run_loop(agent: Agent) -> None:
         input_items.append({"role": "user", "content": stripped})
 
         try:
-            result = Runner.run_streamed(agent, input=input_items)
-            async for event in result.stream_events():
-                _handle_event(event)
+            result = Runner.run_streamed(agent, input=input_items, max_turns=100)
+            async with _EscMonitor() as esc:
+                async for event in result.stream_events():
+                    if esc.interrupted:
+                        break
+                    _handle_event(event)
             console.print()
-            input_items = result.to_input_list()
+            if esc.interrupted:
+                console.print("[dim](interrupted)[/dim]")
+            else:
+                input_items = result.to_input_list()
         except KeyboardInterrupt:
             console.print("\n[dim](interrupted)[/dim]")
         except Exception as e:
-            print_error(str(e))
+            print_error(e)
