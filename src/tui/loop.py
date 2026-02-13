@@ -6,6 +6,7 @@ import sys
 import termios
 import time
 import tty
+import warnings
 
 from agents import Agent, Runner
 from agents.items import ToolCallItem
@@ -121,17 +122,25 @@ async def run_loop(agent: Agent) -> None:
         input_items.append({"role": "user", "content": stripped})
 
         try:
-            result = Runner.run_streamed(agent, input=input_items, max_turns=100)
-            async with _EscMonitor() as esc:
-                async for event in result.stream_events():
-                    if esc.interrupted:
-                        break
-                    _handle_event(event)
-            console.print()
-            if esc.interrupted:
-                console.print("[dim](interrupted)[/dim]")
-            else:
-                input_items = result.to_input_list()
+            # litellm returns `usage` as a plain dict while the Agents SDK
+            # expects a ResponseAPIUsage Pydantic model, causing a harmless
+            # UserWarning during serialisation.  Suppress it for the entire
+            # streaming + serialisation scope (upstream compatibility issue).
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=UserWarning, module=r"pydantic\.main"
+                )
+                result = Runner.run_streamed(agent, input=input_items, max_turns=100)
+                async with _EscMonitor() as esc:
+                    async for event in result.stream_events():
+                        if esc.interrupted:
+                            break
+                        _handle_event(event)
+                console.print()
+                if esc.interrupted:
+                    console.print("[dim](interrupted)[/dim]")
+                else:
+                    input_items = result.to_input_list()
         except KeyboardInterrupt:
             console.print("\n[dim](interrupted)[/dim]")
         except Exception as e:
