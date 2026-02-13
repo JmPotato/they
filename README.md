@@ -23,8 +23,8 @@ uv run they
 | `API_KEY`     | Yes      | API key for the provider                                |
 | `MODEL`       | Yes      | Model identifier (e.g. `moonshotai/kimi-k2.5`)          |
 | `BASE_URL`    | No       | Custom endpoint URL                                     |
-| `TEMPERATURE` | No       | Sampling temperature (default: `0.7`)                   |
-| `MAX_TOKENS`  | No       | Max output tokens (default: `16384`)                    |
+| `TEMPERATURE` | No       | Sampling temperature (omitted if not set)               |
+| `MAX_TOKENS`  | No       | Max output tokens (omitted if not set)                  |
 
 ## Tools
 
@@ -47,6 +47,12 @@ Inspired by [pi](https://pi.dev).
 | `/model` | Display current model configuration |
 | `/clear` | Reset conversation history          |
 | `/quit`  | Exit                                |
+
+## Keyboard Shortcuts
+
+| Shortcut  | Description                                  |
+| --------- | -------------------------------------------- |
+| `Esc Esc` | Interrupt the current streaming operation    |
 
 ## License
 

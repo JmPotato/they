@@ -13,7 +13,11 @@ src/
   agent.py           — Agent creation (system prompt, model, tools)
   tools/             — Tool implementations (read, write, edit, bash)
     guard.py         — Path validation / safety guards
-  tui/               — Terminal UI (prompt_toolkit input, Rich console output, slash commands)
+  tui/               — Terminal UI
+    prompt.py        — prompt_toolkit input with paste collapsing
+    loop.py          — Main conversation loop, streaming, double-Esc interrupt
+    console.py       — Rich console output, error display
+    commands.py      — Slash command dispatch
 tests/               — pytest + pytest-asyncio test suite
 ```
 
@@ -22,7 +26,7 @@ tests/               — pytest + pytest-asyncio test suite
 ### Setup
 
 ```bash
-uv sync
+uv sync --extra dev
 cp .env.example .env   # fill in PROVIDER, API_KEY, MODEL
 ```
 
@@ -60,6 +64,9 @@ uv run ruff format --check .
 - **LiteLLM for multi-provider support**: The provider/model pair is passed as `{provider}/{model}` to LiteLLM.
 - **Tracing disabled**: Agent SDK tracing is turned off by default.
 - **Frozen config**: `Config` is an immutable dataclass, loaded once as a singleton.
+- **prompt_toolkit for input**: Protected prompt prefix, arrow key cursor movement, bracketed paste collapsing (>5 lines).
+- **Double-Esc interrupt**: Pressing Esc twice within 0.5s cancels the current streaming operation.
+- **Optional generation parameters**: `temperature` and `max_tokens` default to `None` (omitted from API calls) to avoid unsupported-parameter errors with certain providers.
 
 ## Working with the Code
 
