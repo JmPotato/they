@@ -134,6 +134,8 @@ async def run_loop(agent: Agent) -> None:
             # expects a ResponseAPIUsage Pydantic model, causing a harmless
             # UserWarning during serialisation.  Suppress it for the entire
             # streaming + serialisation scope (upstream compatibility issue).
+            # NB: catch_warnings is not thread-safe (it mutates global warning
+            # filters), but that's fine in a single-threaded asyncio loop.
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     "ignore", category=UserWarning, module=r"pydantic\.main"

@@ -67,7 +67,12 @@ def _shorten_msg(msg: str) -> str:
 
 
 def _extract_api_message(text: str) -> str | None:
-    """Try to pull the human-readable message from a JSON API error body."""
+    """Try to pull the human-readable message from a JSON API error body.
+
+    Note: the brace-matching is naive and may mis-parse strings containing
+    literal braces (e.g. ``{"msg": "use { wisely"}``).  This is acceptable
+    here because the function is best-effort error display, not data parsing.
+    """
     start = text.find("{")
     if start < 0:
         return None
