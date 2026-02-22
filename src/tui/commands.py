@@ -47,7 +47,10 @@ def dispatch(text: str) -> str | None:
         "clear" — caller should reset conversation history
         None    — command handled, continue normally
     """
-    cmd = text.lower().split()[0]
+    parts = text.strip().lower().split()
+    if not parts:
+        return None
+    cmd = parts[0]
 
     if cmd in QUIT_COMMANDS:
         console.print("Bye!")
