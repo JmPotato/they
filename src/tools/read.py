@@ -28,6 +28,9 @@ def read_tool(file_path: str, offset: int = 0, limit: int = 0) -> str:
     lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
     total = len(lines)
 
+    if total == 0:
+        return f"[{p.name}] (empty file)"
+
     start = max(0, offset - 1) if offset > 0 else 0
     end = start + limit if limit > 0 else total
     selected = lines[start:end]
