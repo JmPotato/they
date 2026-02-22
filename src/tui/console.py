@@ -40,7 +40,7 @@ def _summarize_args(args: str) -> str:
     """Extract the most relevant arg value for a one-line display."""
     try:
         parsed = json.loads(args)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         return ""
     if not isinstance(parsed, dict):
         return ""
@@ -83,7 +83,7 @@ def _extract_api_message(text: str) -> str | None:
                 break
     try:
         data = json.loads(text[start:end])
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         return None
     if isinstance(data, dict) and isinstance(data.get("error"), dict):
         return data["error"].get("message")
