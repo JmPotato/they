@@ -3,10 +3,16 @@
 import asyncio
 import os
 import sys
-import termios
 import time
-import tty
 import warnings
+
+try:
+    import termios
+    import tty
+
+    _HAS_TERMIOS = True
+except ImportError:  # Windows
+    _HAS_TERMIOS = False
 
 from agents import Agent, Runner
 from agents.items import ToolCallItem
@@ -55,15 +61,17 @@ class _EscMonitor:
     async def __aenter__(self):
         self._triggered = False
         self._last_esc = 0
-        self._old_settings = termios.tcgetattr(self._fd)
-        tty.setcbreak(self._fd)
-        asyncio.get_running_loop().add_reader(self._fd, self._on_readable)
+        if _HAS_TERMIOS:
+            self._old_settings = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd)
+            asyncio.get_running_loop().add_reader(self._fd, self._on_readable)
         return self
 
     async def __aexit__(self, *exc):
-        asyncio.get_running_loop().remove_reader(self._fd)
-        if self._old_settings is not None:
-            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_settings)
+        if _HAS_TERMIOS:
+            asyncio.get_running_loop().remove_reader(self._fd)
+            if self._old_settings is not None:
+                termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_settings)
 
     @property
     def interrupted(self) -> bool:
