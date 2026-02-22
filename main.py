@@ -32,7 +32,7 @@ def main_sync() -> None:
     """Synchronous CLI entry point."""
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt, EOFError:
         pass
 
 

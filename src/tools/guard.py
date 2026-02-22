@@ -7,7 +7,7 @@ from pathlib import Path
 SAFE_SUFFIXES = (".example", ".sample", ".template")
 
 # Patterns matched against the file name (not the full path)
-SENSITIVE_NAMES = [
+SENSITIVE_NAMES = (
     ".env",
     ".env.*",
     "*.pem",
@@ -15,19 +15,17 @@ SENSITIVE_NAMES = [
     "*.p12",
     "*.pfx",
     "*.jks",
-]
+)
 
 # Single-component directory names matched against path parts
-SENSITIVE_DIRS = [
+SENSITIVE_DIRS = (
     ".ssh",
     ".gnupg",
     ".aws",
-]
+)
 
 # Multi-component path fragments matched via substring of the resolved path
-SENSITIVE_FRAGMENTS = [
-    ".config/gcloud",
-]
+SENSITIVE_FRAGMENTS = (".config/gcloud",)
 
 
 def check_path(file_path: str) -> str | None:

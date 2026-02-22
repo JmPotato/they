@@ -110,7 +110,7 @@ async def run_loop(agent: Agent) -> None:
         console.print()
         try:
             user_input = await prompt_input()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             console.print("\nBye!")
             break
 
