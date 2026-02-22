@@ -24,6 +24,7 @@ async def bash_tool(command: str, timeout: int = 120) -> str:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
+        await proc.wait()
         return f"Error: command timed out after {timeout}s"
 
     parts: list[str] = []
