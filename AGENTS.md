@@ -74,3 +74,4 @@ uv run ruff format --check .
 - Keep changes minimal and focused — avoid unnecessary refactoring.
 - Run `uv run pytest` to verify changes before committing.
 - Run `uv run ruff check . && uv run ruff format --check .` to ensure code style compliance.
+- All commits must include a `Signed-off-by` line. Use `git commit -s` or `git commit --signoff` to add it automatically.
