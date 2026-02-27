@@ -8,6 +8,8 @@ They can read, write, edit files and run bash commands. That's all they do. 4 to
 
 ## Quick Start
 
+Requires **Python 3.14+** and [uv](https://docs.astral.sh/uv/).
+
 ```bash
 uv sync
 cp .env.example .env
@@ -46,7 +48,7 @@ Inspired by [pi](https://pi.dev).
 | `/help`  | Show available commands             |
 | `/model` | Display current model configuration |
 | `/clear` | Reset conversation history          |
-| `/quit`  | Exit                                |
+| `/quit`  | Exit (alias: `/exit`)               |
 
 ## Keyboard Shortcuts
 
