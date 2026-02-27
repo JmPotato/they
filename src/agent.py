@@ -40,6 +40,7 @@ def create_agent(config: Config | None = None) -> Agent:
     settings = ModelSettings(
         temperature=cfg.temperature,
         max_tokens=cfg.max_tokens,
+        include_usage=True,
     )
 
     return Agent(

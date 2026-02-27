@@ -1,77 +1,32 @@
 # Agent Guidelines
 
-## Project Overview
-
-**they** is a minimal terminal AI agent built with Python 3.14+ and the OpenAI Agents SDK (with LiteLLM extension). It provides 4 tools — read, write, edit, bash — and supports any LLM provider via LiteLLM.
-
-## Architecture
-
-```
-main.py              — Entry point, configures LiteLLM and launches the TUI loop
-src/
-  config.py          — Config dataclass, loaded from .env via python-dotenv
-  agent.py           — Agent creation (system prompt, model, tools)
-  tools/             — Tool implementations (read, write, edit, bash)
-    guard.py         — Path validation / safety guards
-  tui/               — Terminal UI
-    prompt.py        — prompt_toolkit input with paste collapsing
-    loop.py          — Main conversation loop, streaming, double-Esc interrupt
-    console.py       — Rich console output, error display
-    commands.py      — Slash command dispatch
-tests/               — pytest + pytest-asyncio test suite
-```
+**they** is a minimal terminal AI agent built with Python 3.14+ and the OpenAI Agents SDK (with LiteLLM extension). 4 tools — read, write, edit, bash — no plugins, no framework abstractions.
 
 ## Development
 
-### Setup
-
 ```bash
-uv sync --extra dev
-cp .env.example .env   # fill in PROVIDER, API_KEY, MODEL
-```
-
-### Run
-
-```bash
-uv run they
-```
-
-### Test
-
-```bash
-uv run pytest
-```
-
-### Lint
-
-```bash
-uv run ruff check .
-uv run ruff format --check .
+uv sync --extra dev          # setup (uv only, not pip)
+cp .env.example .env         # fill in PROVIDER, API_KEY, MODEL
+uv run they                  # run
+uv run pytest                # test
+uv run ruff check . && uv run ruff format --check .  # lint
 ```
 
 ## Conventions
 
-- **Package manager**: uv (not pip). Use `uv sync` / `uv run`.
-- **Python version**: 3.14+.
-- **Style**: Ruff for linting and formatting. No custom rules beyond defaults in pyproject.toml.
-- **Testing**: pytest with pytest-asyncio (`asyncio_mode = "auto"`). Tests live in `tests/`.
-- **Config**: All runtime configuration via environment variables / `.env` file. Never commit `.env`.
-- **Dependencies**: Declared in `pyproject.toml` under `[project.dependencies]` and `[project.optional-dependencies.dev]`.
+- **Testing**: pytest with pytest-asyncio (`asyncio_mode = "auto"`). Third-party deprecation warnings are filtered via `filterwarnings` in pyproject.toml — add new filters there, not in test code.
+- **Config**: All runtime configuration via `.env`. Never commit `.env`.
+- **Commits**: Must include `Signed-off-by`. Use `git commit -s`.
 
-## Key Design Decisions
+## Design Rationale (non-obvious)
 
-- **4 tools only**: read, write, edit, bash. No plugins, no framework abstractions.
-- **LiteLLM for multi-provider support**: The provider/model pair is passed as `{provider}/{model}` to LiteLLM.
-- **Tracing disabled**: Agent SDK tracing is turned off by default.
-- **Frozen config**: `Config` is an immutable dataclass, loaded once as a singleton.
-- **prompt_toolkit for input**: Protected prompt prefix, arrow key cursor movement, bracketed paste collapsing (>5 lines).
-- **Double-Esc interrupt**: Pressing Esc twice within 0.5s cancels the current streaming operation.
-- **Optional generation parameters**: `temperature` and `max_tokens` default to `None` (omitted from API calls) to avoid unsupported-parameter errors with certain providers.
+- `temperature` and `max_tokens` default to `None` (omitted from API calls) to avoid unsupported-parameter errors with certain providers.
+- Pydantic `UserWarning` from litellm usage serialisation is suppressed at the streaming scope in `loop.py` — this is a known upstream compatibility issue, not a bug.
+- `guard.py` checks both the given filename and the symlink-resolved name — a plain name check alone can be bypassed via symlinks to sensitive files.
 
 ## Working with the Code
 
 - Always read a file before editing it.
-- Keep changes minimal and focused — avoid unnecessary refactoring.
-- Run `uv run pytest` to verify changes before committing.
-- Run `uv run ruff check . && uv run ruff format --check .` to ensure code style compliance.
-- All commits must include a `Signed-off-by` line. Use `git commit -s` or `git commit --signoff` to add it automatically.
+- Keep changes minimal — avoid unnecessary refactoring.
+- Run tests and lint before committing.
+- This file should stay concise — only record information that cannot be obtained by scanning the directory structure or reading the source code (e.g. non-obvious design rationale, workflow conventions, gotchas).

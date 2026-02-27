@@ -1,8 +1,16 @@
 """Slash commands — local handlers for /xxx inputs."""
 
 from collections.abc import Callable
+from enum import Enum
 
 from .console import console
+
+
+class Signal(Enum):
+    """Control signals returned by dispatch() to the main loop."""
+
+    QUIT = "quit"
+    CLEAR = "clear"
 
 
 def handle_help() -> None:
@@ -39,14 +47,8 @@ QUIT_COMMANDS = frozenset({"/quit", "/exit"})
 CLEAR_COMMANDS = frozenset({"/clear"})
 
 
-def dispatch(text: str) -> str | None:
-    """Handle a slash command. Returns a control signal or None.
-
-    Returns:
-        "quit"  — caller should exit the loop
-        "clear" — caller should reset conversation history
-        None    — command handled, continue normally
-    """
+def dispatch(text: str) -> Signal | None:
+    """Handle a slash command. Returns a control signal or None."""
     parts = text.strip().lower().split()
     if not parts:
         return None
@@ -54,11 +56,11 @@ def dispatch(text: str) -> str | None:
 
     if cmd in QUIT_COMMANDS:
         console.print("Bye!")
-        return "quit"
+        return Signal.QUIT
 
     if cmd in CLEAR_COMMANDS:
         console.print("[dim]Conversation cleared.[/dim]")
-        return "clear"
+        return Signal.CLEAR
 
     handler = COMMANDS.get(cmd)
     if handler:

@@ -51,8 +51,10 @@ def _summarize_args(args: str) -> str:
     return ""
 
 
-def print_text_delta(delta: str) -> None:
-    console.print(delta, end="", highlight=False)
+def print_usage(input_tokens: int, output_tokens: int) -> None:
+    console.print(
+        f"[dim]tokens: {input_tokens} in · {output_tokens} out[/dim]",
+    )
 
 
 def _shorten_msg(msg: str) -> str:
@@ -67,27 +69,12 @@ def _shorten_msg(msg: str) -> str:
 
 
 def _extract_api_message(text: str) -> str | None:
-    """Try to pull the human-readable message from a JSON API error body.
-
-    Note: the brace-matching is naive and may mis-parse strings containing
-    literal braces (e.g. ``{"msg": "use { wisely"}``).  This is acceptable
-    here because the function is best-effort error display, not data parsing.
-    """
+    """Try to pull the human-readable message from a JSON API error body."""
     start = text.find("{")
     if start < 0:
         return None
-    # Find the matching closing brace (handle nested braces)
-    depth, end = 0, start
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
     try:
-        data = json.loads(text[start:end])
+        data, _ = json.JSONDecoder().raw_decode(text, start)
     except json.JSONDecodeError, ValueError:
         return None
     if isinstance(data, dict) and isinstance(data.get("error"), dict):

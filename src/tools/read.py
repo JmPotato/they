@@ -22,10 +22,24 @@ def read_tool(file_path: str, offset: int = 0, limit: int = 0) -> str:
     p = Path(file_path)
     if not p.exists():
         return f"Error: file not found: {file_path}"
-    if not p.is_file():
-        return f"Error: not a file: {file_path}"
 
-    lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+    if p.is_dir():
+        entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name))
+        lines = []
+        for entry in entries:
+            name = entry.name + ("/" if entry.is_dir() else "")
+            lines.append(f"  {name}")
+        header = f"[{p.name}/] {len(entries)} entries"
+        return header + "\n" + "\n".join(lines) if lines else header
+
+    if not p.is_file():
+        return f"Error: not a regular file: {file_path}"
+
+    try:
+        text = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError, ValueError:
+        return f"Error: not a text file (binary content): {file_path}"
+    lines = text.splitlines(keepends=True)
     total = len(lines)
 
     if total == 0:

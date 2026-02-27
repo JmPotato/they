@@ -17,6 +17,7 @@ class TestCreateAgent:
     def test_name_and_tools(self, agent):
         assert agent.name == "they"
         assert len(agent.tools) == 4
+        assert agent.model_settings.include_usage is True
 
     def test_instructions_reference_all_tools(self, agent):
         for name in ("read_tool", "write_tool", "edit_tool", "bash_tool"):

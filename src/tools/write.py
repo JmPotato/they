@@ -21,4 +21,4 @@ def write_tool(file_path: str, content: str) -> str:
     p = Path(file_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     written = p.write_text(content, encoding="utf-8")
-    return f"Wrote {written} bytes to {file_path}"
+    return f"Wrote {written} characters to {file_path}"

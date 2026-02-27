@@ -69,6 +69,24 @@ class TestConfig:
         with pytest.raises(ValueError, match="API_KEY"):
             Config.from_env(env_file)
 
+    def test_invalid_temperature_raises(self, tmp_path: Path):
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "PROVIDER=openrouter\nAPI_KEY=sk-test\nMODEL=test\nTEMPERATURE=abc\n"
+        )
+
+        with pytest.raises(ValueError, match="TEMPERATURE must be a number"):
+            Config.from_env(env_file)
+
+    def test_invalid_max_tokens_raises(self, tmp_path: Path):
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "PROVIDER=openrouter\nAPI_KEY=sk-test\nMODEL=test\nMAX_TOKENS=3.14\n"
+        )
+
+        with pytest.raises(ValueError, match="MAX_TOKENS must be an integer"):
+            Config.from_env(env_file)
+
     def test_litellm_model_property(self):
         config = Config(
             provider="openrouter",

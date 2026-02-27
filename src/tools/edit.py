@@ -23,6 +23,9 @@ def edit_tool(file_path: str, old_text: str, new_text: str) -> str:
     if not p.exists():
         return f"Error: file not found: {file_path}"
 
+    if old_text == new_text:
+        return "Error: old_text and new_text are identical — no change needed."
+
     content = p.read_text(encoding="utf-8")
     if old_text not in content:
         return (

@@ -31,17 +31,17 @@ SENSITIVE_FRAGMENTS = (".config/gcloud",)
 def check_path(file_path: str) -> str | None:
     """Return an error message if the path is sensitive, otherwise None."""
     p = Path(file_path)
-    name = p.name
-
-    # Allow templates like .env.example
-    if name.endswith(SAFE_SUFFIXES):
-        return None
-
-    for pattern in SENSITIVE_NAMES:
-        if fnmatch.fnmatch(name, pattern):
-            return f"Skipped: {name} is a sensitive file and cannot be accessed."
-
     resolved = p.resolve()
+
+    # Check both the given name and the resolved name (catches symlinks)
+    for name in {p.name, resolved.name}:
+        # Allow templates like .env.example
+        if name.endswith(SAFE_SUFFIXES):
+            continue
+        for pattern in SENSITIVE_NAMES:
+            if fnmatch.fnmatch(name, pattern):
+                return f"Skipped: {name} is a sensitive file and cannot be accessed."
+
     parts = resolved.parts
     for dirname in SENSITIVE_DIRS:
         if dirname in parts:

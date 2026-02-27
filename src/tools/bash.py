@@ -4,7 +4,7 @@ import asyncio
 
 from agents import function_tool
 
-MAX_OUTPUT = 30000
+MAX_OUTPUT = 30000  # ~30 KB character limit per stream
 
 
 @function_tool

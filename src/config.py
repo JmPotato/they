@@ -24,7 +24,7 @@ class Config:
         return f"{self.provider}/{self.model}"
 
     @classmethod
-    def from_env(cls, env_file: str | Path | None = None) -> "Config":
+    def from_env(cls, env_file: str | Path | None = None) -> Config:
         """Load configuration from environment / .env file.
 
         Raises:
@@ -47,9 +47,27 @@ class Config:
             api_key=os.environ["API_KEY"],
             model=os.environ["MODEL"],
             base_url=os.getenv("BASE_URL"),
-            temperature=float(t) if (t := os.getenv("TEMPERATURE")) else None,
-            max_tokens=int(m) if (m := os.getenv("MAX_TOKENS")) else None,
+            temperature=cls._parse_float("TEMPERATURE", t)
+            if (t := os.getenv("TEMPERATURE"))
+            else None,
+            max_tokens=cls._parse_int("MAX_TOKENS", m)
+            if (m := os.getenv("MAX_TOKENS"))
+            else None,
         )
+
+    @staticmethod
+    def _parse_float(name: str, value: str) -> float:
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f"{name} must be a number, got: {value!r}") from None
+
+    @staticmethod
+    def _parse_int(name: str, value: str) -> int:
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f"{name} must be an integer, got: {value!r}") from None
 
 
 # Global singleton

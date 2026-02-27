@@ -16,98 +16,190 @@ except ImportError:  # Windows
 
 from agents import Agent, Runner
 from agents.items import ToolCallItem
+from agents.result import RunResultStreaming
 from agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
-from openai.types.responses import ResponseTextDeltaEvent
+from openai.types.responses import ResponseCompletedEvent, ResponseTextDeltaEvent
+from rich.live import Live
+from rich.markdown import Markdown
 
-from .commands import dispatch
-from .console import (
-    console,
-    print_error,
-    print_text_delta,
-    print_tool_call,
-    print_welcome,
-)
+from .commands import Signal, dispatch
+from .console import console, print_error, print_tool_call, print_usage, print_welcome
 from .prompt import prompt_input
 
-DOUBLE_ESC_WINDOW = 0.5  # seconds
 
+async def _stream_response(result: RunResultStreaming) -> tuple[bool, int, int]:
+    """Consume the streaming response from the Agent, rendering output live.
 
-class _EscMonitor:
-    """Async context manager that detects double-Esc keypresses during streaming.
+    This function handles three concerns in a single pass over the event stream:
 
-    Sets the terminal to cbreak mode so individual keypresses arrive immediately,
-    then watches stdin via the event loop's reader.  Two Esc presses within
-    ``DOUBLE_ESC_WINDOW`` seconds set the ``interrupted`` flag.
+    1. **Markdown rendering** — text deltas are accumulated and fed into a
+       Rich ``Live`` display that re-renders the full Markdown on each chunk,
+       giving the user a progressively-updating formatted view.
+
+    2. **Double-Esc interrupt** — while streaming, stdin is switched to cbreak
+       mode so individual keypresses arrive immediately.  A reader callback
+       watches for two consecutive Esc presses within 0.5 s and sets a flag
+       that breaks out of the event loop on the next iteration.
+
+    3. **Token tracking** — when the provider sends a ``ResponseCompletedEvent``
+       (end of a model response), we extract ``input_tokens`` / ``output_tokens``
+       from the usage payload for display after the turn.
+
+    Returns:
+        ``(interrupted, input_tokens, output_tokens)``
     """
+    text_buf: list[str] = []
+    input_tokens = 0
+    output_tokens = 0
+    interrupted = False
+    live: Live | None = None
 
-    def __init__(self):
-        self._last_esc: float = 0
-        self._triggered = False
-        self._fd = sys.stdin.fileno()
-        self._old_settings: list | None = None
+    # -- Set up double-Esc detection -----------------------------------------
+    # Switch stdin to cbreak mode so we receive each keypress individually
+    # (normally the terminal buffers until Enter).  Register a reader callback
+    # on the event loop that fires whenever stdin has data.  Two Esc presses
+    # (0x1b) within 0.5 s set `interrupted = True`.
+    last_esc = 0.0
+    fd = sys.stdin.fileno()
+    old_settings = None
 
-    # -- event-loop callback --------------------------------------------------
-
-    def _on_readable(self):
-        data = os.read(self._fd, 1024)
+    def _on_stdin():
+        nonlocal last_esc, interrupted
+        data = os.read(fd, 1024)
         if data == b"\x1b":
             now = time.monotonic()
-            if now - self._last_esc < DOUBLE_ESC_WINDOW:
-                self._triggered = True
-            self._last_esc = now
+            if now - last_esc < 0.5:
+                interrupted = True
+            last_esc = now
 
-    # -- context manager ------------------------------------------------------
+    if _HAS_TERMIOS:
+        old_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+        asyncio.get_running_loop().add_reader(fd, _on_stdin)
 
-    async def __aenter__(self):
-        self._triggered = False
-        self._last_esc = 0
+    try:
+        async for event in result.stream_events():
+            if interrupted:
+                break
+
+            # -- Handle raw model responses -----------------------------------
+            # The SDK emits two kinds of raw events we care about:
+            #   • ResponseTextDeltaEvent  — a chunk of generated text
+            #   • ResponseCompletedEvent  — end-of-response with usage stats
+            if isinstance(event, RawResponsesStreamEvent):
+                data = event.data
+                if isinstance(data, ResponseTextDeltaEvent):
+                    # Accumulate text and update the Live Markdown display.
+                    # Live is created lazily on the first delta so we don't
+                    # show an empty panel during pure tool-call sequences.
+                    text_buf.append(data.delta)
+                    if live is None:
+                        live = Live(
+                            Markdown(""),
+                            console=console,
+                            vertical_overflow="visible",
+                        )
+                        live.start()
+                    live.update(Markdown("".join(text_buf)))
+                elif isinstance(data, ResponseCompletedEvent):
+                    # Accumulate token counts across all responses in this turn
+                    # (multi-step tool-use turns produce multiple responses).
+                    usage = getattr(data.response, "usage", None)
+                    if usage:
+                        input_tokens += getattr(usage, "input_tokens", 0) or 0
+                        output_tokens += getattr(usage, "output_tokens", 0) or 0
+                continue
+
+            # -- Handle tool calls --------------------------------------------
+            # When the agent invokes a tool, we:
+            #   1. Stop the Live display so rendered text stays on screen
+            #   2. Print a dim one-liner showing the tool name + key argument
+            #   3. Clear the text buffer — the next text segment (after the
+            #      tool returns) gets its own fresh Live display
+            if not isinstance(event, RunItemStreamEvent):
+                continue
+            if event.name != "tool_called":
+                continue
+            item = event.item
+            if isinstance(item, ToolCallItem) and item.raw_item:
+                name = getattr(item.raw_item, "name", "") or ""
+                args = getattr(item.raw_item, "arguments", "") or ""
+                if name:
+                    if live is not None:
+                        live.stop()
+                        live = None
+                    console.print()
+                    print_tool_call(name, args)
+                    text_buf.clear()
+    finally:
+        # -- Tear down --------------------------------------------------------
+        # Always clean up, even if the stream raised an exception:
+        #   • Stop Live so partial Markdown doesn't hang on screen
+        #   • Remove the stdin reader and restore original terminal settings
+        if live is not None:
+            live.stop()
         if _HAS_TERMIOS:
-            self._old_settings = termios.tcgetattr(self._fd)
-            tty.setcbreak(self._fd)
-            asyncio.get_running_loop().add_reader(self._fd, self._on_readable)
-        return self
+            asyncio.get_running_loop().remove_reader(fd)
+            if old_settings is not None:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    async def __aexit__(self, *exc):
-        if _HAS_TERMIOS:
-            asyncio.get_running_loop().remove_reader(self._fd)
-            if self._old_settings is not None:
-                termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_settings)
-
-    @property
-    def interrupted(self) -> bool:
-        return self._triggered
+    return interrupted, input_tokens, output_tokens
 
 
-def _handle_event(event: RawResponsesStreamEvent | RunItemStreamEvent) -> None:
-    """Dispatch a single stream event to the appropriate console printer."""
-    if isinstance(event, RawResponsesStreamEvent):
-        if isinstance(event.data, ResponseTextDeltaEvent):
-            print_text_delta(event.data.delta)
-        return
+async def _run_turn(agent: Agent, input_items: list) -> list:
+    """Execute one agent turn with streaming and return updated history.
 
-    if not isinstance(event, RunItemStreamEvent):
-        return
+    Orchestrates a single request → stream → result cycle:
+      1. Suppress a harmless LiteLLM/Pydantic serialisation warning
+      2. Kick off ``Runner.run_streamed`` (non-blocking — returns immediately)
+      3. Await ``_stream_response`` which consumes the event stream, renders
+         output, and returns interrupt / token-usage info
+      4. If the user didn't interrupt, snapshot the full conversation
+         (``result.to_input_list()``) so the next turn has complete context
+      5. Display token usage if the provider reported it
+    """
+    with warnings.catch_warnings():
+        # litellm returns `usage` as a plain dict while the Agents SDK expects
+        # a ResponseAPIUsage Pydantic model → harmless UserWarning on
+        # serialisation.  Safe to suppress for the entire streaming scope.
+        warnings.filterwarnings(
+            "ignore", category=UserWarning, module=r"pydantic\.main"
+        )
+        result = Runner.run_streamed(agent, input=input_items, max_turns=100)
+        interrupted, in_tok, out_tok = await _stream_response(result)
 
-    if event.name != "tool_called":
-        return
-
-    item = event.item
-    if isinstance(item, ToolCallItem) and item.raw_item:
-        name = getattr(item.raw_item, "name", "") or ""
-        args = getattr(item.raw_item, "arguments", "") or ""
-        if name:
-            console.print()
-            print_tool_call(name, args)
+    console.print()
+    if interrupted:
+        # User double-Esc'd — keep the existing input_items unchanged so the
+        # partial response is discarded and the user can retry or continue.
+        console.print("[dim](interrupted)[/dim]")
+    else:
+        # Successful completion — replace input_items with the full
+        # conversation history (user messages + assistant responses + tool
+        # results) so the next turn has complete context.
+        input_items = result.to_input_list()
+    if in_tok or out_tok:
+        print_usage(in_tok, out_tok)
+    return input_items
 
 
 async def run_loop(agent: Agent) -> None:
-    """Run the interactive conversation loop."""
+    """Top-level REPL: read user input → dispatch → execute agent turn.
+
+    ``input_items`` is the rolling conversation history passed to the Agent
+    on each turn.  It grows with each successful turn (via
+    ``result.to_input_list()``) and resets on ``/clear``.
+    """
     print_welcome()
 
     input_items: list = []
 
     while True:
-        console.print()
+        console.print()  # blank line between turns for visual separation
+
+        # -- Read input -------------------------------------------------------
+        # prompt_input() uses prompt_toolkit with bracketed-paste support.
+        # Ctrl-D (EOFError) and Ctrl-C (KeyboardInterrupt) exit the loop.
         try:
             user_input = await prompt_input()
         except EOFError, KeyboardInterrupt:
@@ -118,39 +210,25 @@ async def run_loop(agent: Agent) -> None:
         if not stripped:
             continue
 
-        # Slash commands are handled locally
+        # -- Slash commands ---------------------------------------------------
+        # Handled locally without touching the Agent.  dispatch() returns a
+        # control signal: "quit" / "clear" / None (command handled, continue).
         if stripped.startswith("/"):
             signal = dispatch(stripped)
-            if signal == "quit":
+            if signal is Signal.QUIT:
                 break
-            if signal == "clear":
+            if signal is Signal.CLEAR:
                 input_items = []
             continue
 
+        # -- Agent turn -------------------------------------------------------
+        # Append the user message to history, then run the Agent.  _run_turn
+        # returns the (possibly updated) input_items list.  If it raises, we
+        # show an error and leave input_items as-is so the user can retry.
         input_items.append({"role": "user", "content": stripped})
 
         try:
-            # litellm returns `usage` as a plain dict while the Agents SDK
-            # expects a ResponseAPIUsage Pydantic model, causing a harmless
-            # UserWarning during serialisation.  Suppress it for the entire
-            # streaming + serialisation scope (upstream compatibility issue).
-            # NB: catch_warnings is not thread-safe (it mutates global warning
-            # filters), but that's fine in a single-threaded asyncio loop.
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=UserWarning, module=r"pydantic\.main"
-                )
-                result = Runner.run_streamed(agent, input=input_items, max_turns=100)
-                async with _EscMonitor() as esc:
-                    async for event in result.stream_events():
-                        if esc.interrupted:
-                            break
-                        _handle_event(event)
-                console.print()
-                if esc.interrupted:
-                    console.print("[dim](interrupted)[/dim]")
-                else:
-                    input_items = result.to_input_list()
+            input_items = await _run_turn(agent, input_items)
         except KeyboardInterrupt:
             console.print("\n[dim](interrupted)[/dim]")
         except Exception as e:
