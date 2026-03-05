@@ -11,7 +11,35 @@ from src.tui.console import (
     _walk_exception_chain,
     console,
     print_error,
+    print_tool_call,
 )
+
+
+# -- print_tool_call ----------------------------------------------------------
+
+
+class TestPrintToolCall:
+    def test_with_known_key(self):
+        with console.capture() as capture:
+            print_tool_call("bash_tool", json.dumps({"command": "ls -la"}))
+        output = capture.get()
+        assert "bash_tool" in output
+        assert "ls -la" in output
+
+    def test_fallback_raw_args(self):
+        raw = "x" * 200
+        with console.capture() as capture:
+            print_tool_call("some_tool", raw)
+        output = capture.get()
+        assert "some_tool" in output
+        assert "…" in output
+        assert len(output) < 300
+
+    def test_no_args(self):
+        with console.capture() as capture:
+            print_tool_call("my_tool", "")
+        output = capture.get()
+        assert "my_tool" in output
 
 
 # -- _summarize_args ----------------------------------------------------------
@@ -56,6 +84,12 @@ class TestShortenMsg:
         assert "Received Chunk" not in result
         assert "Something failed" in result
 
+    def test_truncates_at_original_exception_marker(self):
+        msg = "Error occurred. Original exception: SomeError details"
+        result = _shorten_msg(msg)
+        assert "Original exception" not in result
+        assert "Error occurred" in result
+
     def test_multiline_takes_first_line(self):
         assert _shorten_msg("first\nsecond\nthird") == "first"
 
@@ -79,6 +113,9 @@ class TestExtractApiMessage:
 
     def test_returns_none_for_malformed_json(self):
         assert _extract_api_message("{broken") is None
+
+    def test_returns_none_when_error_dict_missing_message_key(self):
+        assert _extract_api_message('{"error": {"code": 429}}') is None
 
 
 # -- _walk_exception_chain ----------------------------------------------------
@@ -136,6 +173,20 @@ class TestPrintError:
         wrapper.__cause__ = root
         output = _capture_error(wrapper)
         assert "ConnectionError" in output
+
+    def test_exception_without_api_message(self):
+        exc = ValueError("plain failure")
+        output = _capture_error(exc)
+        assert "plain failure" in output
+
+    def test_chained_exception_skips_root_when_repeats_api_msg(self):
+        root = ConnectionError('{"error": {"message": "Rate limit exceeded"}}')
+        wrapper = RuntimeError("request failed")
+        wrapper.__cause__ = root
+        output = _capture_error(wrapper)
+        assert "Rate limit exceeded" in output
+        # Root cause line should be suppressed since it repeats the API message
+        assert "ConnectionError" not in output
 
     def test_tool_use_hint(self):
         output = _capture_error(RuntimeError("finish_reason: error"))

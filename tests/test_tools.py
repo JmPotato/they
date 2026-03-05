@@ -43,6 +43,33 @@ class TestGuard:
         link.symlink_to(env)
         assert check_path(str(link)) is not None
 
+    @pytest.mark.parametrize("name", ["cert.p12", "keystore.pfx", "truststore.jks"])
+    def test_blocks_certificate_store_patterns(self, name: str):
+        assert check_path(name) is not None
+        assert "Skipped" in check_path(name)
+
+    def test_blocks_gnupg_dir(self):
+        assert check_path("/home/user/.gnupg/secring.gpg") is not None
+
+    def test_blocks_aws_dir(self):
+        assert check_path("/home/user/.aws/credentials") is not None
+
+    @pytest.mark.parametrize("name", [".env.sample", ".env.template"])
+    def test_allows_safe_suffix_on_sensitive_name(self, name: str):
+        assert check_path(name) is None
+
+    def test_allows_dot_env_sample_full_path(self):
+        assert check_path("/project/.env.sample") is None
+
+    def test_blocks_symlink_to_sensitive_dir_path(self, tmp_path: Path):
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        key = ssh_dir / "id_rsa"
+        key.write_text("secret")
+        link = tmp_path / "link_to_key"
+        link.symlink_to(key)
+        assert check_path(str(link)) is not None
+
     @pytest.mark.parametrize("name", ["readme.md", "src/config.py", ".env.example"])
     def test_allows_normal_files(self, name: str):
         assert check_path(name) is None
@@ -139,6 +166,18 @@ class TestReadTool:
         result = await read_tool.on_invoke_tool(None, _args(file_path=str(fifo)))
 
         assert "not a regular file" in result
+
+    async def test_read_offset_beyond_file(self, tmp_path: Path):
+        f = tmp_path / "short.txt"
+        f.write_text("line1\nline2\n")
+
+        result = await read_tool.on_invoke_tool(
+            None, _args(file_path=str(f), offset=999, limit=5)
+        )
+
+        # Should succeed but show 0 selected lines
+        assert "lines" in result
+        assert "0" in result or "short.txt" in result
 
     async def test_read_nonexistent(self):
         result = await read_tool.on_invoke_tool(
@@ -253,6 +292,22 @@ class TestBashTool:
     async def test_bash_no_output(self):
         result = await bash_tool.on_invoke_tool(None, _args(command="true"))
         assert result == "(no output)"
+
+    async def test_bash_stdout_and_stderr(self):
+        result = await bash_tool.on_invoke_tool(
+            None, _args(command="echo out && echo err >&2")
+        )
+        assert "out" in result
+        assert "[stderr]" in result
+        assert "err" in result
+
+    async def test_bash_stderr_truncation(self):
+        result = await bash_tool.on_invoke_tool(
+            None,
+            _args(command="python3 -c \"import sys; sys.stderr.write('x' * 50000)\""),
+        )
+        assert "[stderr]" in result
+        assert "truncated" in result
 
     async def test_bash_truncates_large_output(self):
         result = await bash_tool.on_invoke_tool(
