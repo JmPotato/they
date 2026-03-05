@@ -11,15 +11,19 @@ class Signal(Enum):
 
     QUIT = "quit"
     CLEAR = "clear"
+    RESUME = "resume"
 
 
 def handle_help() -> None:
     console.print(
         "[bold]Commands:[/bold]\n"
-        "  /help   — show this message\n"
-        "  /model  — show current model\n"
-        "  /clear  — clear conversation history\n"
-        "  /quit   — exit\n\n"
+        "  /help      — show this message\n"
+        "  /model     — show current model\n"
+        "  /mark      — summarise and checkpoint context\n"
+        "  /sessions  — list recent sessions\n"
+        "  /resume N  — resume session N from list\n"
+        "  /clear     — clear conversation history\n"
+        "  /quit      — exit\n\n"
         "[bold]Shortcuts:[/bold]\n"
         "  Esc Esc — interrupt current operation"
     )
@@ -34,6 +38,24 @@ def handle_model() -> None:
     console.print(
         f"[dim]temperature={cfg.temperature}  max_tokens={cfg.max_tokens}[/dim]"
     )
+
+
+def handle_sessions() -> None:
+    from src.context import list_sessions
+
+    sessions = list_sessions()
+    if not sessions:
+        console.print("[dim]No saved sessions.[/dim]")
+        return
+    for i, s in enumerate(sessions):
+        created = s["created_at"][:19].replace("T", " ") if s["created_at"] else "?"
+        console.print(
+            f"  [bold]{i}[/bold]  {created}  "
+            f"entries={s['entry_count']}  marks={s['mark_count']}"
+        )
+        preview = s.get("preview", "")
+        if preview:
+            console.print(f"       [dim]{preview}[/dim]")
 
 
 # Return value: "quit" to exit, "clear" to reset history, None to continue
@@ -61,6 +83,13 @@ def dispatch(text: str) -> Signal | None:
     if cmd in CLEAR_COMMANDS:
         console.print("[dim]Conversation cleared.[/dim]")
         return Signal.CLEAR
+
+    if cmd == "/sessions":
+        handle_sessions()
+        return None
+
+    if cmd == "/resume":
+        return Signal.RESUME
 
     handler = COMMANDS.get(cmd)
     if handler:

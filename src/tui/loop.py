@@ -22,6 +22,14 @@ from openai.types.responses import ResponseCompletedEvent, ResponseTextDeltaEven
 from rich.live import Live
 from rich.markdown import Markdown
 
+from src.context import (
+    SessionLog,
+    init_session,
+    list_sessions,
+    reset_session,
+    resume_session,
+)
+
 from .commands import Signal, dispatch
 from .console import console, print_error, print_tool_call, print_usage, print_welcome
 from .prompt import prompt_input
@@ -146,17 +154,12 @@ async def _stream_response(result: RunResultStreaming) -> tuple[bool, int, int]:
     return interrupted, input_tokens, output_tokens
 
 
-async def _run_turn(agent: Agent, input_items: list) -> list:
-    """Execute one agent turn with streaming and return updated history.
+async def _run_turn(agent: Agent, input_items: list) -> list | None:
+    """Execute one agent turn with streaming.
 
-    Orchestrates a single request → stream → result cycle:
-      1. Suppress a harmless LiteLLM/Pydantic serialisation warning
-      2. Kick off ``Runner.run_streamed`` (non-blocking — returns immediately)
-      3. Await ``_stream_response`` which consumes the event stream, renders
-         output, and returns interrupt / token-usage info
-      4. If the user didn't interrupt, snapshot the full conversation
-         (``result.to_input_list()``) so the next turn has complete context
-      5. Display token usage if the provider reported it
+    Returns the full ``result.to_input_list()`` on success, or ``None``
+    if the user interrupted the stream.  The caller is responsible for
+    computing new items (by slicing) and extending the session log.
     """
     with warnings.catch_warnings():
         # litellm returns `usage` as a plain dict while the Agents SDK expects
@@ -170,29 +173,101 @@ async def _run_turn(agent: Agent, input_items: list) -> list:
 
     console.print()
     if interrupted:
-        # User double-Esc'd — keep the existing input_items unchanged so the
-        # partial response is discarded and the user can retry or continue.
         console.print("[dim](interrupted)[/dim]")
+        full_result = None
     else:
-        # Successful completion — replace input_items with the full
-        # conversation history (user messages + assistant responses + tool
-        # results) so the next turn has complete context.
-        input_items = result.to_input_list()
+        full_result = result.to_input_list()
     if in_tok or out_tok:
         print_usage(in_tok, out_tok)
-    return input_items
+    return full_result
+
+
+async def _handle_user_mark(session: SessionLog) -> None:
+    """Generate a summary via LLM and place a context mark."""
+    entries = session.entries_since_last_mark()
+    if not entries:
+        console.print("[dim]Nothing to mark — no entries since last mark.[/dim]")
+        return
+
+    formatted = SessionLog.format_entries(entries)
+
+    from litellm import acompletion
+
+    from src.config import get_config
+
+    cfg = get_config()
+    try:
+        response = await acompletion(
+            model=cfg.litellm_model,
+            api_key=cfg.api_key,
+            base_url=cfg.base_url,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarise the following conversation entries "
+                        "concisely. Capture: key decisions, files modified, "
+                        "outcomes, and current state. Be brief but complete."
+                    ),
+                },
+                {"role": "user", "content": formatted},
+            ],
+        )
+        summary = response.choices[0].message.content
+    except Exception as e:
+        print_error(e)
+        return
+
+    mark = session.add_mark(summary)
+    console.print(
+        f"[dim]Mark placed at position {mark.index} ({len(session.marks)} total).[/dim]"
+    )
+
+
+def _handle_resume(text: str) -> SessionLog | None:
+    """Parse ``/resume N`` and load the corresponding session.
+
+    Returns the loaded ``SessionLog`` on success, or ``None`` on error.
+    """
+    parts = text.strip().split()
+    if len(parts) < 2:
+        console.print("[dim]Usage: /resume N (use /sessions to see list)[/dim]")
+        return None
+
+    try:
+        index = int(parts[1])
+    except ValueError:
+        console.print(f"[dim]Invalid index: {parts[1]}[/dim]")
+        return None
+
+    sessions = list_sessions()
+    if not sessions:
+        console.print("[dim]No saved sessions.[/dim]")
+        return None
+
+    if index < 0 or index >= len(sessions):
+        console.print(f"[dim]Index {index} out of range (0–{len(sessions) - 1}).[/dim]")
+        return None
+
+    path = sessions[index]["path"]
+    session = resume_session(path)
+    console.print(
+        f"[dim]Resumed session: {path.name} "
+        f"({len(session.entries)} entries, {len(session.marks)} marks)[/dim]"
+    )
+    return session
 
 
 async def run_loop(agent: Agent) -> None:
     """Top-level REPL: read user input → dispatch → execute agent turn.
 
-    ``input_items`` is the rolling conversation history passed to the Agent
-    on each turn.  It grows with each successful turn (via
-    ``result.to_input_list()``) and resets on ``/clear``.
+    Uses a ``SessionLog`` to maintain an append-only history with
+    mark-based context windowing.  The model sees a sliding window
+    starting from the most recent mark's summary.
     """
     print_welcome()
 
-    input_items: list = []
+    session = init_session()
 
     while True:
         console.print()  # blank line between turns for visual separation
@@ -211,24 +286,36 @@ async def run_loop(agent: Agent) -> None:
             continue
 
         # -- Slash commands ---------------------------------------------------
-        # Handled locally without touching the Agent.  dispatch() returns a
-        # control signal: "quit" / "clear" / None (command handled, continue).
         if stripped.startswith("/"):
+            cmd = stripped.strip().lower().split()[0]
+
+            if cmd == "/mark":
+                await _handle_user_mark(session)
+                continue
+
             signal = dispatch(stripped)
             if signal is Signal.QUIT:
                 break
             if signal is Signal.CLEAR:
-                input_items = []
+                session = reset_session()
+                continue
+            if signal is Signal.RESUME:
+                loaded = _handle_resume(stripped)
+                if loaded is not None:
+                    session = loaded
             continue
 
         # -- Agent turn -------------------------------------------------------
-        # Append the user message to history, then run the Agent.  _run_turn
-        # returns the (possibly updated) input_items list.  If it raises, we
-        # show an error and leave input_items as-is so the user can retry.
-        input_items.append({"role": "user", "content": stripped})
+        # Append user message to session log, build windowed input, run turn.
+        user_msg = {"role": "user", "content": stripped}
+        session.append(user_msg)
+        input_items = session.build_input()
 
         try:
-            input_items = await _run_turn(agent, input_items)
+            full_result = await _run_turn(agent, input_items)
+            if full_result is not None:
+                new_items = full_result[len(input_items) :]
+                session.extend(new_items)
         except KeyboardInterrupt:
             console.print("\n[dim](interrupted)[/dim]")
         except Exception as e:
