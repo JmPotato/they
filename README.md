@@ -4,7 +4,7 @@ Just yet another AI agent — they live in your terminal, read and write files, 
 
 ## What They Do
 
-They can read, write, edit files and run bash commands. That's all they do. 4 tools, no plugins, no framework-of-the-week. Pick any LLM provider you like via LiteLLM, point them at your terminal, and start talking.
+They can read, write, edit files, run bash commands, and manage their own context. 6 tools, no plugins, no framework-of-the-week. Pick any LLM provider you like via LiteLLM, point them at your terminal, and start talking.
 
 ## Quick Start
 
@@ -32,23 +32,28 @@ uv run they
 
 Nothing fancy:
 
-| Tool    | Description                                               |
-| ------- | --------------------------------------------------------- |
-| `read`  | Read file contents, with optional line range              |
-| `write` | Write content to a file, auto-creating parent directories |
-| `edit`  | Find-and-replace (exact first match) in a file            |
-| `bash`  | Execute shell commands with timeout and output truncation |
+| Tool     | Description                                               |
+| -------- | --------------------------------------------------------- |
+| `read`   | Read file contents, with optional line range              |
+| `write`  | Write content to a file, auto-creating parent directories |
+| `edit`   | Find-and-replace (exact first match) in a file            |
+| `bash`   | Execute shell commands with timeout and output truncation |
+| `mark`   | Checkpoint a conversation phase with an optional summary  |
+| `recall` | Browse session history, view entries, or search all history |
 
 Inspired by [pi](https://pi.dev).
 
 ## Slash Commands
 
-| Command  | Description                         |
-| -------- | ----------------------------------- |
-| `/help`  | Show available commands             |
-| `/model` | Display current model configuration |
-| `/clear` | Reset conversation history          |
-| `/quit`  | Exit (alias: `/exit`)               |
+| Command      | Description                         |
+| ------------ | ----------------------------------- |
+| `/help`      | Show available commands             |
+| `/model`     | Display current model configuration |
+| `/mark`      | Summarise and checkpoint context    |
+| `/sessions`  | List recent sessions                |
+| `/resume N`  | Resume session N from list          |
+| `/clear`     | Reset conversation history          |
+| `/quit`      | Exit (alias: `/exit`)               |
 
 ## Keyboard Shortcuts
 

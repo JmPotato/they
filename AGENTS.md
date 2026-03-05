@@ -1,6 +1,6 @@
 # Agent Guidelines
 
-**they** is a minimal terminal AI agent built with Python 3.14+ and the OpenAI Agents SDK (with LiteLLM extension). 4 tools — read, write, edit, bash — no plugins, no framework abstractions.
+**they** is a minimal terminal AI agent built with Python 3.14+ and the OpenAI Agents SDK (with LiteLLM extension). 6 tools — read, write, edit, bash, mark, recall — no plugins, no framework abstractions.
 
 ## Development
 
